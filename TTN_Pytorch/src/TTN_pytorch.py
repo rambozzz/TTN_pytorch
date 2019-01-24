@@ -31,12 +31,11 @@ log_step = 20
 img_dir = '/home/jacopob/Desktop/TextTopicNet-master/data/ImageCLEF_Wikipedia/'
 label_dir = '/home/jacopob/Desktop/TextTopicNet-master/LDA/training_labels40.json'
 model_path = '/home/jacopob/Desktop/TextTopicNet-master/CNN/Pytorch/'
-trained_model_filepath = '/home/jacopob/Desktop/TextTopicNet-master/CNN/Pytorch/alexnet-'+str(num_epoch)+'-'+str(save_step)+'.pkl'
+trained_model_filepath = model_path+'alexnet-'+str(num_epoch)+'-'+str(save_step)+'.pkl'
 
 
 
 class WikiDataset(data.Dataset):
-    """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
     def __init__(self, root, json, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
         
@@ -248,7 +247,9 @@ def train_model(wiki):
                            os.path.join(model_path, 
                                         'alexnet-%d-%d.pkl' %(epoch+1, i+1)))
     plt.plot(losses)
-    plt.show()           
+    plt.show()   
+
+    print('Training ended')        
 
 #Once the model is trained, extracts the output and save it to "path_to_vectors" file. es: path_to_vectors = '/home/jacopob/Downloads/tsne_python/outputVector.npy' 
 def extract_model_output(path_to_vectors,wiki):
@@ -277,7 +278,7 @@ def extract_model_output(path_to_vectors,wiki):
                 output = torch.sigmoid(model(images))
                 output = output.cpu().numpy()
                 np.savetxt(file, output, delimiter=';  ')
-
+    print('Output vector file created, terminated!')
 
 
 ##############################################################################
@@ -291,6 +292,7 @@ def main():
   	wiki = json.load(open(label_dir))
   	
   	if wiki_subset:
+  		#Filepath of 10k images together with their 40d vectorial representations, output of CAFFE MODEL (original TextTopicNet work)
   		caffe_output = '/home/jacopob/Downloads/topic_probs.json'
   		wiki = crate_wiki_subset(caffe_output,wiki)
 
