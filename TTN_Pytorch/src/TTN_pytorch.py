@@ -221,7 +221,7 @@ def train_model(wiki):
     total_step = len(data_loader)
     print('Starting training')
     losses = []
-
+    model.train()
     for epoch in xrange(num_epoch):
         for i, (images, labels) in enumerate(data_loader):          
             
@@ -270,6 +270,7 @@ def extract_model_output(path_to_vectors,wiki):
     print('Feeding the net')
     if os.path.exists(path_to_vectors):
 		os.remove(path_to_vectors)
+    model.eval()
     with torch.no_grad():
         with open(path_to_vectors, 'a') as file:
             for i, (images, labels) in enumerate(data_loader):    
