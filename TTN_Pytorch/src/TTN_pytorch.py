@@ -11,6 +11,7 @@ from torchvision import transforms
 from PIL import Image
 import torch.utils.data as data
 import simplejson as json
+import shutil
 import random
 # import time
 import torch.nn.functional as F
@@ -25,9 +26,10 @@ from collections import OrderedDict
 import matplotlib.pyplot as plt
 
 save_step = 1500
-batch_size = 64
+batch_size = 1
 num_epoch = 60
 log_step = 20
+learning_rate = 1e-4
 img_dir = '/home/jacopob/Desktop/TextTopicNet-master/data/ImageCLEF_Wikipedia/'
 label_dir = '/home/jacopob/Desktop/TextTopicNet-master/LDA/training_labels40.json'
 model_path = '/home/jacopob/Desktop/TextTopicNet-master/CNN/Pytorch/'
@@ -57,8 +59,9 @@ class WikiDataset(data.Dataset):
         # self.count = 0
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
-        image = Image.open(os.path.join(self.path[index])).convert('RGB')
+        """Returns filename andone data pair (image and caption)."""
+        filename = os.path.join(self.path[index])
+        image = Image.open(filename).convert('RGB')
         if self.transform is not None:
             image = self.transform(image)
 
@@ -67,7 +70,7 @@ class WikiDataset(data.Dataset):
             #image = image[:, :, ::-1] - np.zeros_like(image)  # --> modify "/home/jacopob/anaconda2/envs/ttn_jacopo/lib/python2.7/site-packages/torchvision/transforms.py"
             #image -= self.mean  # subtract mean
             #image = image.transpose((2,0,1)) # transpose to channel x height x width order
-            image = transforms.ToTensor().__call__(image) #!!!This already transpose to channel x height x width!!!!
+            image = transforms.ToTensor().__call__(image) #!!!This already transposes to channel x height x width!!!!
             image = image/255
             image = transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]).__call__(image)
 
@@ -75,20 +78,20 @@ class WikiDataset(data.Dataset):
             # print ("image: " + str(self.count))
             # self.count += 1
         target = torch.Tensor(self.target[index])
-        return image, target
+        return filename, image, target
 
     def __len__(self):
         return len(self.ids)
 
 
 def collate_fn(data):
-    images, labels = zip(*data)
+    filenames, images, labels = zip(*data)
 
-    # Merge images (from tuple of 3D tensor to 4D tensor).
+    # Merge image (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
     labels = torch.stack(labels, 0)
 
-    return images, labels
+    return filenames, images, labels
 
 
 def get_loader(root, json, transform, batch_size, shuffle, num_workers):
@@ -110,6 +113,7 @@ def get_loader(root, json, transform, batch_size, shuffle, num_workers):
 
 
 # The net architecture
+'''
 class AlexNet(nn.Module):
     def __init__(self, num_classes=40):
         super(AlexNet, self).__init__()
@@ -138,9 +142,49 @@ class AlexNet(nn.Module):
             nn.Linear(4096, 4096),
             nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(4096, num_classes)
-            # nn.Sigmoid()
+            nn.Linear(4096, num_classes),
+            #nn.Sigmoid()
         )
+
+    def init_weights(self, m):
+        # for m in self.modules():
+
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            
+            
+            import scipy.stats as stats
+            stddev = m.stddev if hasattr(m, 'stddev') else 0.2
+            X = stats.truncnorm(-2, 2, scale=stddev)
+            values = torch.Tensor(X.rvs(m.weight.numel()))
+            values = values.view(m.weight.size())
+            m.weight.data.copy_(values)
+            
+            
+            print ("Initializing weights for: " + str(m))
+            nn.init.xavier_normal_(m.weight.data, 0.2)
+
+        
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+        
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), 256 * 6 * 6)
+        x = self.classifier(x)
+        return x
+'''
+
+class AlexNet(nn.Module):
+    def __init__(self, num_classes=40):
+        super(AlexNet, self).__init__()
+        self.num_classes = num_classes
+        self.model = models.alexnet(pretrained=False, num_classes=self.num_classes)
+
+    def forward(self, images):
+        features = self.model(images)
+        return features
 
     def init_weights(self, m):
         # for m in self.modules():
@@ -153,9 +197,8 @@ class AlexNet(nn.Module):
             values = torch.Tensor(X.rvs(m.weight.numel()))
             values = values.view(m.weight.size())
             m.weight.data.copy_(values)
-            
             '''
-            print "Initializing weights for: " + str(m)
+            print("Initializing weights for: " + str(m))
             nn.init.xavier_normal_(m.weight.data, 0.2)
 
         '''
@@ -163,13 +206,6 @@ class AlexNet(nn.Module):
             nn.init.constant_(m.weight, 1)
             nn.init.constant_(m.bias, 0)
         '''
-
-    def forward(self, x):
-        x = self.features(x)
-        x = x.view(x.size(0), 256 * 6 * 6)
-        x = self.classifier(x)
-        return x
-
 
 def to_var(x, volatile=False):
     if torch.cuda.is_available():
@@ -188,7 +224,21 @@ def crate_wiki_subset(path, wiki):
         for path in paths:
             if filename in path:
                 new_wikiList.append((path, wiki[path]))
+
+                '''
+                images,dir,img = path.split('/')
+                dest_path = '/home/jacopob/Desktop/TTN_Pytorch/data/10k_wikipedia_subset/' + images + '/' + dir
+                if not os.path.exists(dest_path):
+                    os.makedirs(dest_path)
+                shutil.copy(img_dir+path, dest_path)
+                '''
+
     new_wiki = OrderedDict(new_wikiList)
+    print (len(new_wiki))
+    '''
+    with open('/home/jacopob/Desktop/TTN_Pytorch/10k_PYTORCH_samples/10k_subdataset.json', 'w') as fp:
+        json.dump(new_wiki,fp)
+    '''
     return new_wiki
 
 
@@ -203,22 +253,29 @@ def train_model(wiki):
     data_loader = get_loader(img_dir, wiki, transform, batch_size, shuffle=True, num_workers=4)
     print('Building Alexnet')
     model = AlexNet()
-    model.features.apply(model.init_weights)
-    model.classifier.apply(model.init_weights)
+    model.model.features.apply(model.init_weights)
+    model.model.classifier.apply(model.init_weights)
+    #model.features.apply(model.init_weights)
+    #model.classifier.apply(model.init_weights)
     if torch.cuda.is_available():
         model.cuda()
     print('Loss, optimizer, etc.')
     # criterion = nn.MultiLabelSoftMarginLoss()
-    criterion = nn.BCEWithLogitsLoss()
-    # criterion = nn.BCELoss()
+    criterion = nn.BCEWithLogitsLoss()# also try with parameter: reduction='sum'
+    #criterion = nn.BCELoss()
     params = list(model.parameters())
-    optimizer = torch.optim.SGD(params, lr=1e-4, momentum=0.9)
+    optimizer = torch.optim.SGD(params, lr=learning_rate, momentum=0.9)
     total_step = len(data_loader)
     print('Starting training')
+
     losses = []
+    LR_slow_decay = False
+    count = 0
+    loss_decay = 0.9
     model.train()
-    for epoch in xrange(num_epoch):
-        for i, (images, labels) in enumerate(data_loader):
+
+    for epoch in range(num_epoch): #USE xrange IF USING PYTHON 2.7
+        for i, (filename, images, labels) in enumerate(data_loader):
 
             images = to_var(images)
             target = to_var(labels)
@@ -231,16 +288,40 @@ def train_model(wiki):
             loss.backward()
             optimizer.step()
 
-            if i % log_step == 0:
-                print('Epoch [%d/%d], Step [%d/%d], Loss: %.4f'
-                      % (epoch, num_epoch, i, total_step, loss.item()))#loss.data[0]))
 
-            losses.append(loss.item())#loss.data[0])
+            if i % log_step == 0:
+                print('Epoch [%d/%d], Step [%d/%d], Loss: %.4f, LR: %f'
+                      % (epoch, num_epoch, i, total_step, loss.item(), learning_rate))
+
+            losses.append(loss.item())
 
             if (i + 1) % save_step == 0:
                 torch.save(model.state_dict(),
-                           os.path.join(model_path,
-                                        'alexnet-%d-%d.pkl' % (epoch + 1, i + 1)))
+                           os.path.join(model_path, 'alexnet-%d-%d.pkl' % (epoch + 1, i + 1)))
+            '''
+            with open('/home/jacopob/Desktop/TTN_Pytorch/outputfile.txt', 'a') as file:
+                output = torch.sigmoid(output).cpu().detach().numpy()
+                np.savetxt(file, output, delimiter=';  ')
+            with open('/home/jacopob/Desktop/TTN_Pytorch/targetfile.txt', 'a') as file:
+                target = target.cpu().detach().numpy()
+                np.savetxt(file, target, delimiter=';  ')
+            '''
+
+        #LR slow decay, (to be tested)
+        '''
+        if epoch+1 == 10:
+            print ('Decreasing learning_rate of a factor 10')
+            learning_rate = learning_rate*1e-1
+            for group in optimizer.param_groups:
+                group['lr'] = learning_rate
+            LR_slow_decay = True
+        if LR_slow_decay == True:
+            count += 1
+            if (count%5) == 0:
+                learning_rate = learning_rate*0.9
+                for group in optimizer.param_groups:
+                    group['lr'] = learning_rate
+        '''
     plt.plot(losses)
     plt.show()
 
@@ -280,16 +361,16 @@ def extract_model_output(path_to_vectors, wiki):
 
 ##############################################################################
 def main():
-    train = True
+    train = False
     extract_output = False
-    wiki_subset = False
+    wiki_subset = True
 
     # Dictionary extracted from the LDA trained model, json format
     wiki = json.load(open(label_dir))
 
     if wiki_subset:
         # Filepath of 10k images together with their 40d vectorial representations, output of CAFFE MODEL (original TextTopicNet work)
-        caffe_output = '/home/jacopob/Downloads/topic_probs.json'
+        caffe_output = '/home/jacopob/Desktop/TTN_Pytorch/10k_CAFFE_samples/topic_probs.json'
         wiki = crate_wiki_subset(caffe_output, wiki)
 
     if train:
@@ -297,7 +378,7 @@ def main():
 
     if extract_output:
         # Destination path_to_file for the model's output, .npy format
-        path_to_vectors = '/home/jacopob/Downloads/tsne_python/outputVector.npy'
+        path_to_vectors = '/home/jacopob/Desktop/TTN_Pytorch/10k_PYTORCH_samples/outputVector.npy'
         extract_model_output(path_to_vectors, wiki)
 
 
